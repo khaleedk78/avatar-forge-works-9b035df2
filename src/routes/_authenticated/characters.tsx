@@ -782,57 +782,61 @@ function SceneLibrary({ scenes }: { scenes: SceneRow[] }) {
 }
 
 
-function PromptLibrary() {
+type PromptRow = {
+  id: string; name: string; prompt: string; caption_direction: string | null; intensity: string | null;
+};
+
+function PromptLibrary({ prompts }: { prompts: PromptRow[] }) {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="font-display text-lg font-semibold">
-            Prompt Template Library
-          </h3>
-          <p className="text-sm text-muted-foreground">
-            Ready-to-fire scaffolds for recurring drops.
-          </p>
+          <h3 className="font-display text-lg font-semibold">Prompt Template Library</h3>
+          <p className="text-sm text-muted-foreground">Ready-to-fire scaffolds for recurring drops.</p>
         </div>
-        <Button size="sm">
+        <Button size="sm" disabled>
           <Plus className="mr-2 h-4 w-4" /> New template
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {PROMPT_TEMPLATES.map((p) => (
-          <Card key={p.id} className="border-border/60 bg-card/80">
-            <CardContent className="space-y-3 p-5">
-              <div className="flex items-start justify-between gap-2">
-                <div className="font-medium">{p.name}</div>
-                <Badge
-                  variant="outline"
-                  className={intensityBadgeClass(p.intensity)}
-                >
-                  {p.intensity}
-                </Badge>
-              </div>
-              <div className="rounded-lg border border-border/60 bg-background/40 p-3">
-                <div className="mb-1 flex items-center gap-1.5 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                  <Wand2 className="h-3 w-3" /> Prompt template
+      {prompts.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-border/60 bg-muted/20 p-8 text-center text-sm text-muted-foreground">
+          No prompt templates yet.
+        </p>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {prompts.map((p) => (
+            <Card key={p.id} className="border-border/60 bg-card/80">
+              <CardContent className="space-y-3 p-5">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="font-medium">{p.name}</div>
+                  {p.intensity && (
+                    <Badge variant="outline" className={intensityBadgeClass(p.intensity)}>{p.intensity}</Badge>
+                  )}
                 </div>
-                <p className="line-clamp-3 text-xs">{p.template}</p>
-              </div>
-              <div className="rounded-lg border border-border/60 bg-background/40 p-3">
-                <div className="mb-1 flex items-center gap-1.5 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                  <BookOpen className="h-3 w-3" /> Caption direction
+                <div className="rounded-lg border border-border/60 bg-background/40 p-3">
+                  <div className="mb-1 flex items-center gap-1.5 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                    <Wand2 className="h-3 w-3" /> Prompt template
+                  </div>
+                  <p className="line-clamp-3 text-xs">{p.prompt}</p>
                 </div>
-                <p className="line-clamp-2 text-xs text-muted-foreground">
-                  {p.caption}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+                {p.caption_direction && (
+                  <div className="rounded-lg border border-border/60 bg-background/40 p-3">
+                    <div className="mb-1 flex items-center gap-1.5 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                      <BookOpen className="h-3 w-3" /> Caption direction
+                    </div>
+                    <p className="line-clamp-2 text-xs text-muted-foreground">{p.caption_direction}</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
+
 
 function PresetLibrary() {
   return (

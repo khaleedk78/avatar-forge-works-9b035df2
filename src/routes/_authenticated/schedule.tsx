@@ -301,7 +301,24 @@ function QueueBadge({ status }: { status: QueueStatus }) {
 // ---------- Page ----------
 
 function SchedulePage() {
-  const [items, setItems] = useState<ScheduledItem[]>(initialItems);
+  const queryClient = useQueryClient();
+  const { data: scheduleData = [] } = useQuery({ queryKey: ["schedules"], queryFn: fetchSchedules, staleTime: 10_000 });
+  const { data: accounts = [] } = useQuery({ queryKey: ["connected-accounts"], queryFn: fetchAccounts, staleTime: 60_000 });
+  const [items, setItems] = useState<ScheduledItem[]>([]);
+  useEffect(() => setItems(scheduleData), [scheduleData]);
+
+  useEffect(() => {
+    const ch = supabase
+      .channel("schedules-rt")
+      .on("postgres_changes", { event: "*", schema: "public", table: "schedules" }, () =>
+        queryClient.invalidateQueries({ queryKey: ["schedules"] }),
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [queryClient]);
+
+  const characters = useMemo(() => Array.from(new Set(items.map((i) => i.character))), [items]);
+
   const [tab, setTab] = useState("calendar");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | PublishStatus>("all");

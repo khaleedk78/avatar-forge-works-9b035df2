@@ -1355,25 +1355,59 @@ function Mini({ label, value }: { label: string; value: string | number }) {
 
 // ---------- Create dialog ----------
 
-const approvedAssets: Array<Pick<ScheduledItem, "contentName" | "type" | "character" | "thumbnail">> = [
-  { contentName: "Aria — Studio Promo v4", type: "video", character: "Aria", thumbnail: IMG_A },
-  { contentName: "Nova — Window Light B", type: "image", character: "Nova", thumbnail: IMG_B },
-  { contentName: "Luna — Soft Portraits", type: "image", character: "Luna", thumbnail: IMG_C },
-  { contentName: "Veda — Hallway Set", type: "video", character: "Veda", thumbnail: IMG_D },
-  { contentName: "Mira — Cozy Loop", type: "video", character: "Mira", thumbnail: IMG_E },
-];
+type ApprovedAsset = {
+  id: string;
+  type: "image" | "video";
+  name: string;
+  character: string;
+  thumbnail: string;
+};
+
+async function fetchApprovedAssets(): Promise<ApprovedAsset[]> {
+  const [imgRes, vidRes, charRes] = await Promise.all([
+    supabase.from("images").select("id, image_url, prompt, character_id").eq("status", "approved"),
+    supabase.from("videos").select("id, video_url, prompt, character_id").eq("status", "approved"),
+    supabase.from("characters").select("id, name, reference_image_url"),
+  ]);
+  const charMap = new Map((charRes.data ?? []).map((c: any) => [c.id, c]));
+  const imgs: ApprovedAsset[] = (imgRes.data ?? []).map((i: any) => ({
+    id: i.id,
+    type: "image",
+    name: `${charMap.get(i.character_id)?.name ?? "Lila"} — ${(i.prompt ?? "Image").slice(0, 40)}`,
+    character: charMap.get(i.character_id)?.name ?? "Lila",
+    thumbnail: i.image_url ?? charMap.get(i.character_id)?.reference_image_url ?? "",
+  }));
+  const vids: ApprovedAsset[] = (vidRes.data ?? []).map((v: any) => ({
+    id: v.id,
+    type: "video",
+    name: `${charMap.get(v.character_id)?.name ?? "Lila"} — ${(v.prompt ?? "Video").slice(0, 40)}`,
+    character: charMap.get(v.character_id)?.name ?? "Lila",
+    thumbnail: charMap.get(v.character_id)?.reference_image_url ?? "",
+  }));
+  return [...imgs, ...vids];
+}
 
 function CreateScheduleDialog({
   open,
   onOpenChange,
-  onCreate,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
-  onCreate: (i: ScheduledItem) => void;
 }) {
+  const queryClient = useQueryClient();
+  const { data: assets = [] } = useQuery({
+    queryKey: ["approved-assets"],
+    queryFn: fetchApprovedAssets,
+    enabled: open,
+  });
+  const { data: accounts = [] } = useQuery({
+    queryKey: ["connected-accounts"],
+    queryFn: fetchAccounts,
+    enabled: open,
+  });
+
   const [contentIdx, setContentIdx] = useState("0");
-  const [accountId, setAccountId] = useState(accounts[0].id);
+  const [accountId, setAccountId] = useState("");
   const [date, setDate] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() + 1);
@@ -1383,43 +1417,35 @@ function CreateScheduleDialog({
   const [autoPublish, setAutoPublish] = useState(true);
   const [notes, setNotes] = useState("");
 
-  const reset = () => {
-    setContentIdx("0");
-    setAccountId(accounts[0].id);
-    setNotes("");
-    setAutoPublish(true);
-  };
+  useEffect(() => {
+    if (accounts.length && !accountId) setAccountId(accounts[0].id);
+  }, [accounts, accountId]);
 
-  const submit = () => {
-    const c = approvedAssets[Number(contentIdx)];
+  const submit = async () => {
+    const asset = assets[Number(contentIdx)];
+    if (!asset) { toast.error("Pick an approved asset first"); return; }
+    if (!accountId) { toast.error("Connect a Fanvue account first"); return; }
     const iso = new Date(`${date}T${time}:00`).toISOString();
-    const item: ScheduledItem = {
-      id: `sch_${Date.now()}`,
-      contentName: c.contentName,
-      type: c.type,
-      character: c.character,
-      thumbnail: c.thumbnail,
-      accountId,
-      scheduledAt: iso,
-      status: "scheduled",
-      queueStatus: "waiting",
-      autoPublish,
-      notes: notes || undefined,
-      reviewStatus: "approved",
-      settings: baseSettings,
-      scenePrompts: scenePromptsSample,
-      negativePrompt: negativePromptSample,
-      history: [
-        {
-          at: new Date().toISOString(),
-          label: `Scheduled for ${fmtDateTime(iso)}`,
-          kind: "scheduled",
-        },
-      ],
-    };
-    onCreate(item);
-    reset();
-    onOpenChange(false);
+    try {
+      const { data: userRes } = await supabase.auth.getUser();
+      await scheduleService.create({
+        content_type: asset.type,
+        content_id: asset.id,
+        publish_time: iso,
+        platform: "Fanvue",
+        status: "scheduled",
+        created_by: userRes.user?.id ?? null,
+      } as any);
+      // attach connected account to underlying media row
+      const table = asset.type === "image" ? "images" : "videos";
+      await supabase.from(table).update({ connected_account_id: accountId }).eq("id", asset.id);
+      toast.success("Content scheduled");
+      queryClient.invalidateQueries({ queryKey: ["schedules"] });
+      onOpenChange(false);
+      setNotes("");
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed to schedule");
+    }
   };
 
   return (
@@ -1435,34 +1461,40 @@ function CreateScheduleDialog({
         <div className="space-y-4">
           <div className="space-y-1.5">
             <Label>Content</Label>
-            <Select value={contentIdx} onValueChange={setContentIdx}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {approvedAssets.map((a, idx) => (
-                  <SelectItem key={idx} value={String(idx)}>
-                    {a.contentName}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {assets.length === 0 ? (
+              <p className="rounded-md border border-dashed border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+                No approved content yet. Approve images or videos in the Review Queue first.
+              </p>
+            ) : (
+              <Select value={contentIdx} onValueChange={setContentIdx}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {assets.map((a, idx) => (
+                    <SelectItem key={a.id} value={String(idx)}>{a.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
 
           <div className="space-y-1.5">
             <Label>Publishing account</Label>
-            <Select value={accountId} onValueChange={setAccountId}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {accounts.map((a) => (
-                  <SelectItem key={a.id} value={a.id} disabled={a.status !== "connected"}>
-                    {a.name} {a.status !== "connected" ? "· offline" : ""}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {accounts.length === 0 ? (
+              <p className="rounded-md border border-dashed border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+                No Fanvue account connected yet — add one in Settings.
+              </p>
+            ) : (
+              <Select value={accountId} onValueChange={setAccountId}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {accounts.map((a) => (
+                    <SelectItem key={a.id} value={a.id} disabled={a.status !== "connected"}>
+                      {a.name} {a.status !== "connected" ? "· offline" : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -1503,10 +1535,8 @@ function CreateScheduleDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button onClick={submit} className="gap-2">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={submit} className="gap-2" disabled={!assets.length || !accounts.length}>
             <CalendarPlus className="h-4 w-4" /> Schedule
           </Button>
         </DialogFooter>
@@ -1514,3 +1544,4 @@ function CreateScheduleDialog({
     </Dialog>
   );
 }
+

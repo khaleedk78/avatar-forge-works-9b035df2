@@ -26,6 +26,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { generationService } from "@/services/generationService";
+import { useLila } from "@/hooks/use-lila";
+import { useAuth } from "@/hooks/use-auth";
 import { Separator } from "@/components/ui/separator";
 
 export const Route = createFileRoute("/_authenticated/generate")({
@@ -151,6 +154,8 @@ function VideoGenerationTab() {
     "low quality, blurry, distorted face, extra fingers, watermark, text, logo"
   );
   const [submitting, setSubmitting] = useState(false);
+  const { data: lila } = useLila();
+  const { user } = useAuth();
 
   const addScene = () =>
     setScenes((s) => [...s, { id: newId(), prompt: "" }]);
@@ -178,12 +183,38 @@ function VideoGenerationTab() {
   );
 
   const onGenerate = async () => {
+    if (!user) {
+      toast.error("You must be signed in to queue a job.");
+      return;
+    }
     setSubmitting(true);
-    await new Promise((r) => setTimeout(r, 1200));
-    setSubmitting(false);
-    toast.success("Generation job queued", {
-      description: `${scenes.length} scenes · ${totalFrames.toLocaleString()} frames · ~${durationSec.toFixed(1)}s`,
-    });
+    try {
+      await generationService.enqueue({
+        type: "video",
+        character_id: lila?.id ?? null,
+        created_by: user.id,
+        status: "queued",
+        input_payload: {
+          fps,
+          framesPerScene,
+          samplingSteps,
+          numScenes: scenes.length,
+          totalFrames,
+          durationSec,
+          referenceImageName: refImage?.name ?? null,
+          scenes: scenes.map((s) => s.prompt),
+          negativePrompt: negative,
+        },
+      });
+      toast.success("Generation job queued", {
+        description: `${scenes.length} scenes · ${totalFrames.toLocaleString()} frames · ~${durationSec.toFixed(1)}s`,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to queue job";
+      toast.error(msg);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const canGenerate = !!refImage && scenes.every((s) => s.prompt.trim().length > 0);

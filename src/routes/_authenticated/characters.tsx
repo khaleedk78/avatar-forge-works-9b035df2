@@ -1078,6 +1078,9 @@ function PresetLibrary({ presets }: { presets: IntensityPresetRow[] }) {
     </div>
   );
 }
+function DefaultsPanel({
+  defaults,
+  setDefaults,
 }: {
   defaults: {
     fps: number;

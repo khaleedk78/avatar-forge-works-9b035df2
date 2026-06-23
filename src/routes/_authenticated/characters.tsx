@@ -828,7 +828,7 @@ function ConsistencySection() {
   );
 }
 
-function SceneLibrary() {
+function SceneLibrary({ scenes }: { scenes: SceneRow[] }) {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">

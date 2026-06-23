@@ -143,209 +143,104 @@ type ScheduledItem = {
 
 // ---------- Mock data ----------
 
-const accounts: ConnectedAccount[] = [
-  { id: "acc_a", platform: "fanvue", name: "Fanvue Account A", handle: "@lila.studio", status: "connected" },
-  { id: "acc_b", platform: "fanvue", name: "Fanvue Account B", handle: "@lila.muse", status: "connected" },
-  { id: "acc_c", platform: "fanvue", name: "Fanvue Account C", handle: "@lila.noir", status: "error" },
-];
+// ---------- Data loaders ----------
 
-const IMG_A = "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=600&q=80";
-const IMG_B = "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=600&q=80";
-const IMG_C = "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=600&q=80";
-const IMG_D = "https://images.unsplash.com/photo-1488161628813-04466f872be2?w=600&q=80";
-const IMG_E = "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=600&q=80";
-const IMG_F = "https://images.unsplash.com/photo-1502823403499-6ccfcf4fb453?w=600&q=80";
+const PLACEHOLDER = "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=600&q=80";
 
-const today = new Date();
-const at = (dayOffset: number, hour: number, min = 0) => {
-  const d = new Date(today);
-  d.setDate(d.getDate() + dayOffset);
-  d.setHours(hour, min, 0, 0);
-  return d.toISOString();
-};
+async function fetchAccounts(): Promise<ConnectedAccount[]> {
+  const { data, error } = await supabase
+    .from("connected_accounts")
+    .select("*")
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return (data ?? []).map((a) => ({
+    id: a.id,
+    platform: "fanvue",
+    name: a.account_name,
+    handle: a.external_account_id ?? "—",
+    status:
+      a.connection_status === "connected"
+        ? "connected"
+        : a.connection_status === "error"
+          ? "error"
+          : "disconnected",
+  }));
+}
 
-const characters = ["Aria", "Nova", "Luna", "Veda", "Mira"];
+async function fetchSchedules(): Promise<ScheduledItem[]> {
+  const { data: rows, error } = await supabase
+    .from("schedules")
+    .select("*")
+    .order("publish_time", { ascending: true });
+  if (error) throw error;
 
-const baseSettings = { fps: 16, framesPerScene: 257, numScenes: 10, samplingSteps: 29 };
+  const imageIds = (rows ?? []).filter((r) => r.content_type === "image").map((r) => r.content_id);
+  const videoIds = (rows ?? []).filter((r) => r.content_type === "video").map((r) => r.content_id);
 
-const scenePromptsSample = [
-  "Soft morning light, character looks toward window, gentle smile, cinematic depth of field",
-  "Close-up portrait, neutral expression, shallow focus on eyes, warm rim light",
-  "Walking through hallway, slow camera dolly, ambient haze",
-  "Sitting near desk, casual pose, low key lighting",
-];
+  const [imgRes, vidRes, charRes] = await Promise.all([
+    imageIds.length
+      ? supabase.from("images").select("id, image_url, prompt, character_id, connected_account_id, published_at, external_post_id, publish_status").in("id", imageIds)
+      : Promise.resolve({ data: [] } as any),
+    videoIds.length
+      ? supabase.from("videos").select("id, video_url, prompt, scene_prompts, character_id, connected_account_id, published_at, external_post_id, publish_status").in("id", videoIds)
+      : Promise.resolve({ data: [] } as any),
+    supabase.from("characters").select("id, name, reference_image_url"),
+  ]);
 
-const negativePromptSample =
-  "low quality, blurry, distorted hands, extra fingers, watermark, text overlay, deformed face";
+  const imgMap = new Map((imgRes.data ?? []).map((i: any) => [i.id, i]));
+  const vidMap = new Map((vidRes.data ?? []).map((v: any) => [v.id, v]));
+  const charMap = new Map((charRes.data ?? []).map((c: any) => [c.id, c]));
 
-const initialItems: ScheduledItem[] = [
-  {
-    id: "sch_001",
-    contentName: "Aria — Morning Studio v3",
-    type: "video",
-    character: "Aria",
-    thumbnail: IMG_A,
-    referenceImage: IMG_C,
-    accountId: "acc_a",
-    scheduledAt: at(0, 18, 30),
-    status: "scheduled",
-    queueStatus: "ready",
-    autoPublish: true,
-    notes: "Lead promo for Friday drop.",
-    reviewStatus: "approved",
-    settings: baseSettings,
-    scenePrompts: scenePromptsSample,
-    negativePrompt: negativePromptSample,
-    history: [
-      { at: at(-2, 11), label: "Approved by Maya", kind: "approved", by: "Maya" },
-      { at: at(-2, 12), label: "Scheduled for 18:30", kind: "scheduled", by: "Maya" },
-      { at: at(0, 17, 55), label: "Queued for publish", kind: "queued" },
-    ],
-  },
-  {
-    id: "sch_002",
-    contentName: "Nova — Window Light",
-    type: "image",
-    character: "Nova",
-    thumbnail: IMG_B,
-    referenceImage: IMG_D,
-    accountId: "acc_b",
-    scheduledAt: at(0, 21, 0),
-    status: "scheduled",
-    queueStatus: "waiting",
-    autoPublish: true,
-    reviewStatus: "approved",
-    settings: baseSettings,
-    scenePrompts: scenePromptsSample.slice(0, 2),
-    negativePrompt: negativePromptSample,
-    history: [
-      { at: at(-1, 14), label: "Approved by Jordan", kind: "approved", by: "Jordan" },
-      { at: at(-1, 14, 5), label: "Scheduled for 21:00", kind: "scheduled", by: "Jordan" },
-    ],
-  },
-  {
-    id: "sch_003",
-    contentName: "Luna — Hallway Walk",
-    type: "video",
-    character: "Luna",
-    thumbnail: IMG_C,
-    accountId: "acc_a",
-    scheduledAt: at(1, 9, 0),
-    status: "scheduled",
-    queueStatus: "waiting",
-    autoPublish: false,
-    reviewStatus: "approved",
-    settings: baseSettings,
-    scenePrompts: scenePromptsSample,
-    negativePrompt: negativePromptSample,
-    history: [
-      { at: at(-1, 9), label: "Approved by Maya", kind: "approved", by: "Maya" },
-      { at: at(-1, 9, 5), label: "Scheduled for tomorrow 09:00", kind: "scheduled" },
-    ],
-  },
-  {
-    id: "sch_004",
-    contentName: "Veda — Desk Portrait",
-    type: "image",
-    character: "Veda",
-    thumbnail: IMG_D,
-    accountId: "acc_b",
-    scheduledAt: at(2, 16, 30),
-    status: "scheduled",
-    queueStatus: "waiting",
-    autoPublish: true,
-    reviewStatus: "approved",
-    settings: baseSettings,
-    scenePrompts: scenePromptsSample,
-    negativePrompt: negativePromptSample,
-    history: [{ at: at(-1, 10), label: "Scheduled", kind: "scheduled" }],
-  },
-  {
-    id: "sch_005",
-    contentName: "Mira — Golden Hour Loop",
-    type: "video",
-    character: "Mira",
-    thumbnail: IMG_E,
-    accountId: "acc_a",
-    scheduledAt: at(-1, 20, 0),
-    status: "published",
-    queueStatus: "published",
-    autoPublish: true,
-    reviewStatus: "approved",
-    externalPostId: "fv_mock_video_1718995200",
-    publishedAt: at(-1, 20, 1),
-    settings: baseSettings,
-    scenePrompts: scenePromptsSample,
-    negativePrompt: negativePromptSample,
-    history: [
-      { at: at(-2, 9), label: "Approved", kind: "approved" },
-      { at: at(-2, 9, 5), label: "Scheduled", kind: "scheduled" },
-      { at: at(-1, 20), label: "Publishing", kind: "publishing" },
-      { at: at(-1, 20, 1), label: "Published to Fanvue Account A", kind: "published" },
-    ],
-  },
-  {
-    id: "sch_006",
-    contentName: "Aria — Soft Promo",
-    type: "image",
-    character: "Aria",
-    thumbnail: IMG_F,
-    accountId: "acc_b",
-    scheduledAt: at(-2, 12, 0),
-    status: "published",
-    queueStatus: "published",
-    autoPublish: true,
-    reviewStatus: "approved",
-    externalPostId: "fv_mock_image_1718822400",
-    publishedAt: at(-2, 12, 0),
-    settings: baseSettings,
-    scenePrompts: scenePromptsSample.slice(0, 1),
-    negativePrompt: negativePromptSample,
-    history: [
-      { at: at(-3, 8), label: "Approved", kind: "approved" },
-      { at: at(-2, 12), label: "Published to Fanvue Account B", kind: "published" },
-    ],
-  },
-  {
-    id: "sch_007",
-    contentName: "Nova — Late Night Teaser",
-    type: "video",
-    character: "Nova",
-    thumbnail: IMG_B,
-    accountId: "acc_c",
-    scheduledAt: at(-1, 23, 0),
-    status: "failed",
-    queueStatus: "failed",
-    autoPublish: true,
-    reviewStatus: "approved",
-    notes: "Token expired on Fanvue Account C.",
-    settings: baseSettings,
-    scenePrompts: scenePromptsSample,
-    negativePrompt: negativePromptSample,
-    history: [
-      { at: at(-2, 10), label: "Approved", kind: "approved" },
-      { at: at(-1, 23), label: "Publishing", kind: "publishing" },
-      { at: at(-1, 23, 1), label: "Failed — invalid credentials", kind: "failed" },
-    ],
-  },
-  {
-    id: "sch_008",
-    contentName: "Luna — Studio Set 2",
-    type: "image",
-    character: "Luna",
-    thumbnail: IMG_C,
-    accountId: "acc_a",
-    scheduledAt: at(3, 11, 15),
-    status: "scheduled",
-    queueStatus: "waiting",
-    autoPublish: false,
-    reviewStatus: "approved",
-    settings: baseSettings,
-    scenePrompts: scenePromptsSample.slice(0, 2),
-    negativePrompt: negativePromptSample,
-    history: [{ at: at(0, 9), label: "Scheduled", kind: "scheduled" }],
-  },
-];
+  return (rows ?? []).map((r: any): ScheduledItem => {
+    const isVideo = r.content_type === "video";
+    const src: any = isVideo ? vidMap.get(r.content_id) : imgMap.get(r.content_id);
+    const char: any = src?.character_id ? charMap.get(src.character_id) : null;
+    const scenes: string[] = isVideo && Array.isArray(src?.scene_prompts) ? src.scene_prompts : src?.prompt ? [src.prompt] : [];
+    const media = isVideo ? src?.video_url : src?.image_url;
+    const thumb = char?.reference_image_url || media || PLACEHOLDER;
+    const status: PublishStatus =
+      r.status === "published"
+        ? "published"
+        : r.status === "failed"
+          ? "failed"
+          : r.status === "publishing" || src?.publish_status === "publishing"
+            ? "publishing"
+            : "scheduled";
+    const queueStatus: QueueStatus =
+      status === "published"
+        ? "published"
+        : status === "failed"
+          ? "failed"
+          : status === "publishing"
+            ? "publishing"
+            : new Date(r.publish_time) <= new Date()
+              ? "ready"
+              : "waiting";
+    return {
+      id: r.id,
+      contentName: `${char?.name ?? "Lila"} — ${(scenes[0] ?? "Untitled").slice(0, 40)}`,
+      type: r.content_type,
+      character: char?.name ?? "Lila",
+      thumbnail: thumb,
+      referenceImage: char?.reference_image_url ?? undefined,
+      accountId: src?.connected_account_id ?? "",
+      scheduledAt: r.publish_time,
+      status,
+      queueStatus,
+      autoPublish: true,
+      reviewStatus: "approved",
+      externalPostId: src?.external_post_id ?? undefined,
+      publishedAt: src?.published_at ?? undefined,
+      settings: { fps: 16, framesPerScene: 257, numScenes: scenes.length || 1, samplingSteps: 29 },
+      scenePrompts: scenes,
+      negativePrompt: "low quality, blurry, distorted face, watermark",
+      history: [
+        { at: r.created_at, label: `Scheduled for ${new Date(r.publish_time).toLocaleString()}`, kind: "scheduled" },
+        ...(src?.published_at ? [{ at: src.published_at, label: "Published", kind: "published" as const }] : []),
+      ],
+    };
+  });
+}
 
 // ---------- Helpers ----------
 

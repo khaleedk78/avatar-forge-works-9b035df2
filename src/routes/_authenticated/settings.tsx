@@ -627,7 +627,7 @@ function SettingsPage() {
                             <td key={ch} className="px-4 py-3 text-center">
                               <div className="flex justify-center">
                                 <Switch
-                                  checked={notifications[key][ch]}
+                                  checked={notifications[channelField(key, ch)]}
                                   onCheckedChange={(v) =>
                                     updateChannel(key, ch, v)
                                   }
@@ -643,13 +643,12 @@ function SettingsPage() {
               </SectionCard>
 
               <div className="flex justify-end">
-                <Button
-                  onClick={() => toast.success("Notification preferences saved")}
-                >
-                  Save changes
+                <Button onClick={handleSaveNotifications} disabled={savingNotif}>
+                  {savingNotif ? "Saving…" : "Save changes"}
                 </Button>
               </div>
             </TabsContent>
+
 
             {/* ---------- SYSTEM ---------- */}
             <TabsContent value="system" className="space-y-6">

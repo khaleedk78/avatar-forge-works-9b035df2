@@ -454,12 +454,12 @@ function SettingsPage() {
                   <div className="space-y-2">
                     <Label>Default visibility</Label>
                     <Select
-                      value={publishingDefaults.defaultVisibility}
+                      value={publishingDefaults.default_visibility}
                       onValueChange={(v) =>
                         setPublishingDefaults((p) => ({
                           ...p,
-                          defaultVisibility:
-                            v as PublishingDefaults["defaultVisibility"],
+                          default_visibility:
+                            v as PublishingDefaultsRow["default_visibility"],
                         }))
                       }
                     >
@@ -476,11 +476,11 @@ function SettingsPage() {
                   <div className="space-y-2">
                     <Label>Default category</Label>
                     <Input
-                      value={publishingDefaults.defaultCategory}
+                      value={publishingDefaults.default_category}
                       onChange={(e) =>
                         setPublishingDefaults((p) => ({
                           ...p,
-                          defaultCategory: e.target.value,
+                          default_category: e.target.value,
                         }))
                       }
                     />
@@ -490,11 +490,11 @@ function SettingsPage() {
                     <Input
                       type="number"
                       min={0}
-                      value={publishingDefaults.defaultPrice}
+                      value={publishingDefaults.default_price}
                       onChange={(e) =>
                         setPublishingDefaults((p) => ({
                           ...p,
-                          defaultPrice: Number(e.target.value) || 0,
+                          default_price: Number(e.target.value) || 0,
                         }))
                       }
                     />
@@ -502,20 +502,20 @@ function SettingsPage() {
                   <ToggleRow
                     label="Watermark enabled"
                     description="Apply Lila Studio watermark to outgoing posts."
-                    checked={publishingDefaults.watermarkEnabled}
+                    checked={publishingDefaults.watermark_enabled}
                     onChange={(v) =>
                       setPublishingDefaults((p) => ({
                         ...p,
-                        watermarkEnabled: v,
+                        watermark_enabled: v,
                       }))
                     }
                   />
                   <ToggleRow
                     label="Auto publish"
                     description="Push scheduled posts without confirmation."
-                    checked={publishingDefaults.autoPublish}
+                    checked={publishingDefaults.auto_publish}
                     onChange={(v) =>
-                      setPublishingDefaults((p) => ({ ...p, autoPublish: v }))
+                      setPublishingDefaults((p) => ({ ...p, auto_publish: v }))
                     }
                   />
                 </div>
@@ -529,12 +529,17 @@ function SettingsPage() {
                 <div className="grid gap-6 md:grid-cols-3">
                   <ToggleRow
                     label="Auto sync enabled"
-                    checked={autoSync}
-                    onChange={setAutoSync}
+                    checked={sync.auto_sync}
+                    onChange={(v) => setSync((p) => ({ ...p, auto_sync: v }))}
                   />
                   <div className="space-y-2">
                     <Label>Sync interval (minutes)</Label>
-                    <Select value={syncInterval} onValueChange={setSyncInterval}>
+                    <Select
+                      value={String(sync.sync_interval_minutes)}
+                      onValueChange={(v) =>
+                        setSync((p) => ({ ...p, sync_interval_minutes: Number(v) }))
+                      }
+                    >
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
@@ -548,10 +553,11 @@ function SettingsPage() {
                   </div>
                   <ToggleRow
                     label="Retry failed uploads"
-                    checked={retryUploads}
-                    onChange={setRetryUploads}
+                    checked={sync.retry_uploads}
+                    onChange={(v) => setSync((p) => ({ ...p, retry_uploads: v }))}
                   />
                 </div>
+
 
                 <Separator className="my-6" />
 

@@ -1,4 +1,5 @@
-import { Bell, Search, ChevronDown } from "lucide-react";
+import { Bell, Search, ChevronDown, LogOut } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -12,8 +13,26 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ThemeToggle } from "./theme-toggle";
+import { useAuth } from "@/hooks/use-auth";
 
 export function AppHeader() {
+  const { user, signOut } = useAuth();
+  const navigate = useNavigate();
+  const email = user?.email ?? "";
+  const initials = email
+    ? email
+        .split("@")[0]
+        .split(/[._-]/)
+        .map((p) => p[0])
+        .join("")
+        .slice(0, 2)
+        .toUpperCase()
+    : "LA";
+  const handleSignOut = async () => {
+    await signOut();
+    navigate({ to: "/login" });
+  };
+
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-border bg-background/80 px-3 backdrop-blur-md md:px-5">
       <SidebarTrigger className="h-9 w-9" />

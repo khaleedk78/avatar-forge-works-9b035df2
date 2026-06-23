@@ -296,51 +296,51 @@ function ReviewPage() {
       ),
     );
 
-  const approve = (id: string) => {
-    setStatus(id, "approved", {
-      at: new Date().toISOString(),
-      label: "Approved",
-      kind: "approved",
-    });
-    toast.success("Content approved");
+  const approve = async (id: string) => {
+    setStatus(id, "approved", { at: new Date().toISOString(), label: "Approved", kind: "approved" });
+    try {
+      await reviewService.decide(id, "approved");
+      toast.success("Content approved");
+      queryClient.invalidateQueries({ queryKey: ["review-queue"] });
+    } catch (e: any) { toast.error(e?.message ?? "Failed to approve"); }
   };
-  const reject = (id: string) => {
-    setStatus(id, "rejected", {
-      at: new Date().toISOString(),
-      label: "Rejected",
-      kind: "rejected",
-    });
-    toast.error("Content rejected");
+  const reject = async (id: string) => {
+    setStatus(id, "rejected", { at: new Date().toISOString(), label: "Rejected", kind: "rejected" });
+    try {
+      await reviewService.decide(id, "rejected");
+      toast.error("Content rejected");
+      queryClient.invalidateQueries({ queryKey: ["review-queue"] });
+    } catch (e: any) { toast.error(e?.message ?? "Failed to reject"); }
   };
-  const regenerate = (id: string) => {
+  const regenerate = async (id: string) => {
+    const item = items.find((i) => i.id === id);
+    if (!item) return;
     setItems((arr) =>
       arr.map((i) =>
         i.id === id
-          ? {
-              ...i,
-              status: "pending",
-              history: [
-                ...i.history,
-                {
-                  at: new Date().toISOString(),
-                  label: "Regeneration requested",
-                  kind: "regenerated",
-                },
-              ],
-            }
+          ? { ...i, status: "pending", history: [...i.history, { at: new Date().toISOString(), label: "Regeneration requested", kind: "regenerated" }] }
           : i,
       ),
     );
-    toast("Regeneration queued", {
-      description: "A new job was created with the original settings.",
-    });
+    try {
+      const { data: userRes } = await supabase.auth.getUser();
+      await generationService.enqueue({
+        type: item.type,
+        status: "queued",
+        created_by: userRes.user?.id ?? null,
+        input_payload: { scenes: item.scenes, fps: item.settings.fps, framesPerScene: item.settings.framesPerScene, samplingSteps: item.settings.samplingSteps, regenerationOf: id },
+      } as any);
+      toast("Regeneration queued");
+    } catch (e: any) { toast.error(e?.message ?? "Failed to regenerate"); }
   };
 
-  const saveNote = (id: string) => {
-    setItems((arr) =>
-      arr.map((i) => (i.id === id ? { ...i, notes: noteDraft } : i)),
-    );
-    toast.success("Reviewer note saved");
+  const saveNote = async (id: string) => {
+    setItems((arr) => arr.map((i) => (i.id === id ? { ...i, notes: noteDraft } : i)));
+    try {
+      const { error } = await supabase.from("review_queue").update({ notes: noteDraft }).eq("id", id);
+      if (error) throw error;
+      toast.success("Reviewer note saved");
+    } catch (e: any) { toast.error(e?.message ?? "Failed to save note"); }
   };
 
   const toggleSelect = (id: string) =>

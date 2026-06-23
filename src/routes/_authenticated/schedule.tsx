@@ -1,5 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { scheduleService, contentService } from "@/services";
 import {
   CalendarClock,
   CalendarPlus,
@@ -140,209 +143,104 @@ type ScheduledItem = {
 
 // ---------- Mock data ----------
 
-const accounts: ConnectedAccount[] = [
-  { id: "acc_a", platform: "fanvue", name: "Fanvue Account A", handle: "@lila.studio", status: "connected" },
-  { id: "acc_b", platform: "fanvue", name: "Fanvue Account B", handle: "@lila.muse", status: "connected" },
-  { id: "acc_c", platform: "fanvue", name: "Fanvue Account C", handle: "@lila.noir", status: "error" },
-];
+// ---------- Data loaders ----------
 
-const IMG_A = "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=600&q=80";
-const IMG_B = "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=600&q=80";
-const IMG_C = "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=600&q=80";
-const IMG_D = "https://images.unsplash.com/photo-1488161628813-04466f872be2?w=600&q=80";
-const IMG_E = "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=600&q=80";
-const IMG_F = "https://images.unsplash.com/photo-1502823403499-6ccfcf4fb453?w=600&q=80";
+const PLACEHOLDER = "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=600&q=80";
 
-const today = new Date();
-const at = (dayOffset: number, hour: number, min = 0) => {
-  const d = new Date(today);
-  d.setDate(d.getDate() + dayOffset);
-  d.setHours(hour, min, 0, 0);
-  return d.toISOString();
-};
+async function fetchAccounts(): Promise<ConnectedAccount[]> {
+  const { data, error } = await supabase
+    .from("connected_accounts")
+    .select("*")
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return (data ?? []).map((a) => ({
+    id: a.id,
+    platform: "fanvue",
+    name: a.account_name,
+    handle: a.external_account_id ?? "—",
+    status:
+      a.connection_status === "connected"
+        ? "connected"
+        : a.connection_status === "error"
+          ? "error"
+          : "disconnected",
+  }));
+}
 
-const characters = ["Aria", "Nova", "Luna", "Veda", "Mira"];
+async function fetchSchedules(): Promise<ScheduledItem[]> {
+  const { data: rows, error } = await supabase
+    .from("schedules")
+    .select("*")
+    .order("publish_time", { ascending: true });
+  if (error) throw error;
 
-const baseSettings = { fps: 16, framesPerScene: 257, numScenes: 10, samplingSteps: 29 };
+  const imageIds = (rows ?? []).filter((r) => r.content_type === "image").map((r) => r.content_id);
+  const videoIds = (rows ?? []).filter((r) => r.content_type === "video").map((r) => r.content_id);
 
-const scenePromptsSample = [
-  "Soft morning light, character looks toward window, gentle smile, cinematic depth of field",
-  "Close-up portrait, neutral expression, shallow focus on eyes, warm rim light",
-  "Walking through hallway, slow camera dolly, ambient haze",
-  "Sitting near desk, casual pose, low key lighting",
-];
+  const [imgRes, vidRes, charRes] = await Promise.all([
+    imageIds.length
+      ? supabase.from("images").select("id, image_url, prompt, character_id, connected_account_id, published_at, external_post_id, publish_status").in("id", imageIds)
+      : Promise.resolve({ data: [] } as any),
+    videoIds.length
+      ? supabase.from("videos").select("id, video_url, prompt, scene_prompts, character_id, connected_account_id, published_at, external_post_id, publish_status").in("id", videoIds)
+      : Promise.resolve({ data: [] } as any),
+    supabase.from("characters").select("id, name, reference_image_url"),
+  ]);
 
-const negativePromptSample =
-  "low quality, blurry, distorted hands, extra fingers, watermark, text overlay, deformed face";
+  const imgMap = new Map((imgRes.data ?? []).map((i: any) => [i.id, i]));
+  const vidMap = new Map((vidRes.data ?? []).map((v: any) => [v.id, v]));
+  const charMap = new Map((charRes.data ?? []).map((c: any) => [c.id, c]));
 
-const initialItems: ScheduledItem[] = [
-  {
-    id: "sch_001",
-    contentName: "Aria — Morning Studio v3",
-    type: "video",
-    character: "Aria",
-    thumbnail: IMG_A,
-    referenceImage: IMG_C,
-    accountId: "acc_a",
-    scheduledAt: at(0, 18, 30),
-    status: "scheduled",
-    queueStatus: "ready",
-    autoPublish: true,
-    notes: "Lead promo for Friday drop.",
-    reviewStatus: "approved",
-    settings: baseSettings,
-    scenePrompts: scenePromptsSample,
-    negativePrompt: negativePromptSample,
-    history: [
-      { at: at(-2, 11), label: "Approved by Maya", kind: "approved", by: "Maya" },
-      { at: at(-2, 12), label: "Scheduled for 18:30", kind: "scheduled", by: "Maya" },
-      { at: at(0, 17, 55), label: "Queued for publish", kind: "queued" },
-    ],
-  },
-  {
-    id: "sch_002",
-    contentName: "Nova — Window Light",
-    type: "image",
-    character: "Nova",
-    thumbnail: IMG_B,
-    referenceImage: IMG_D,
-    accountId: "acc_b",
-    scheduledAt: at(0, 21, 0),
-    status: "scheduled",
-    queueStatus: "waiting",
-    autoPublish: true,
-    reviewStatus: "approved",
-    settings: baseSettings,
-    scenePrompts: scenePromptsSample.slice(0, 2),
-    negativePrompt: negativePromptSample,
-    history: [
-      { at: at(-1, 14), label: "Approved by Jordan", kind: "approved", by: "Jordan" },
-      { at: at(-1, 14, 5), label: "Scheduled for 21:00", kind: "scheduled", by: "Jordan" },
-    ],
-  },
-  {
-    id: "sch_003",
-    contentName: "Luna — Hallway Walk",
-    type: "video",
-    character: "Luna",
-    thumbnail: IMG_C,
-    accountId: "acc_a",
-    scheduledAt: at(1, 9, 0),
-    status: "scheduled",
-    queueStatus: "waiting",
-    autoPublish: false,
-    reviewStatus: "approved",
-    settings: baseSettings,
-    scenePrompts: scenePromptsSample,
-    negativePrompt: negativePromptSample,
-    history: [
-      { at: at(-1, 9), label: "Approved by Maya", kind: "approved", by: "Maya" },
-      { at: at(-1, 9, 5), label: "Scheduled for tomorrow 09:00", kind: "scheduled" },
-    ],
-  },
-  {
-    id: "sch_004",
-    contentName: "Veda — Desk Portrait",
-    type: "image",
-    character: "Veda",
-    thumbnail: IMG_D,
-    accountId: "acc_b",
-    scheduledAt: at(2, 16, 30),
-    status: "scheduled",
-    queueStatus: "waiting",
-    autoPublish: true,
-    reviewStatus: "approved",
-    settings: baseSettings,
-    scenePrompts: scenePromptsSample,
-    negativePrompt: negativePromptSample,
-    history: [{ at: at(-1, 10), label: "Scheduled", kind: "scheduled" }],
-  },
-  {
-    id: "sch_005",
-    contentName: "Mira — Golden Hour Loop",
-    type: "video",
-    character: "Mira",
-    thumbnail: IMG_E,
-    accountId: "acc_a",
-    scheduledAt: at(-1, 20, 0),
-    status: "published",
-    queueStatus: "published",
-    autoPublish: true,
-    reviewStatus: "approved",
-    externalPostId: "fv_mock_video_1718995200",
-    publishedAt: at(-1, 20, 1),
-    settings: baseSettings,
-    scenePrompts: scenePromptsSample,
-    negativePrompt: negativePromptSample,
-    history: [
-      { at: at(-2, 9), label: "Approved", kind: "approved" },
-      { at: at(-2, 9, 5), label: "Scheduled", kind: "scheduled" },
-      { at: at(-1, 20), label: "Publishing", kind: "publishing" },
-      { at: at(-1, 20, 1), label: "Published to Fanvue Account A", kind: "published" },
-    ],
-  },
-  {
-    id: "sch_006",
-    contentName: "Aria — Soft Promo",
-    type: "image",
-    character: "Aria",
-    thumbnail: IMG_F,
-    accountId: "acc_b",
-    scheduledAt: at(-2, 12, 0),
-    status: "published",
-    queueStatus: "published",
-    autoPublish: true,
-    reviewStatus: "approved",
-    externalPostId: "fv_mock_image_1718822400",
-    publishedAt: at(-2, 12, 0),
-    settings: baseSettings,
-    scenePrompts: scenePromptsSample.slice(0, 1),
-    negativePrompt: negativePromptSample,
-    history: [
-      { at: at(-3, 8), label: "Approved", kind: "approved" },
-      { at: at(-2, 12), label: "Published to Fanvue Account B", kind: "published" },
-    ],
-  },
-  {
-    id: "sch_007",
-    contentName: "Nova — Late Night Teaser",
-    type: "video",
-    character: "Nova",
-    thumbnail: IMG_B,
-    accountId: "acc_c",
-    scheduledAt: at(-1, 23, 0),
-    status: "failed",
-    queueStatus: "failed",
-    autoPublish: true,
-    reviewStatus: "approved",
-    notes: "Token expired on Fanvue Account C.",
-    settings: baseSettings,
-    scenePrompts: scenePromptsSample,
-    negativePrompt: negativePromptSample,
-    history: [
-      { at: at(-2, 10), label: "Approved", kind: "approved" },
-      { at: at(-1, 23), label: "Publishing", kind: "publishing" },
-      { at: at(-1, 23, 1), label: "Failed — invalid credentials", kind: "failed" },
-    ],
-  },
-  {
-    id: "sch_008",
-    contentName: "Luna — Studio Set 2",
-    type: "image",
-    character: "Luna",
-    thumbnail: IMG_C,
-    accountId: "acc_a",
-    scheduledAt: at(3, 11, 15),
-    status: "scheduled",
-    queueStatus: "waiting",
-    autoPublish: false,
-    reviewStatus: "approved",
-    settings: baseSettings,
-    scenePrompts: scenePromptsSample.slice(0, 2),
-    negativePrompt: negativePromptSample,
-    history: [{ at: at(0, 9), label: "Scheduled", kind: "scheduled" }],
-  },
-];
+  return (rows ?? []).map((r: any): ScheduledItem => {
+    const isVideo = r.content_type === "video";
+    const src: any = isVideo ? vidMap.get(r.content_id) : imgMap.get(r.content_id);
+    const char: any = src?.character_id ? charMap.get(src.character_id) : null;
+    const scenes: string[] = isVideo && Array.isArray(src?.scene_prompts) ? src.scene_prompts : src?.prompt ? [src.prompt] : [];
+    const media = isVideo ? src?.video_url : src?.image_url;
+    const thumb = char?.reference_image_url || media || PLACEHOLDER;
+    const status: PublishStatus =
+      r.status === "published"
+        ? "published"
+        : r.status === "failed"
+          ? "failed"
+          : r.status === "publishing" || src?.publish_status === "publishing"
+            ? "publishing"
+            : "scheduled";
+    const queueStatus: QueueStatus =
+      status === "published"
+        ? "published"
+        : status === "failed"
+          ? "failed"
+          : status === "publishing"
+            ? "publishing"
+            : new Date(r.publish_time) <= new Date()
+              ? "ready"
+              : "waiting";
+    return {
+      id: r.id,
+      contentName: `${char?.name ?? "Lila"} — ${(scenes[0] ?? "Untitled").slice(0, 40)}`,
+      type: r.content_type,
+      character: char?.name ?? "Lila",
+      thumbnail: thumb,
+      referenceImage: char?.reference_image_url ?? undefined,
+      accountId: src?.connected_account_id ?? "",
+      scheduledAt: r.publish_time,
+      status,
+      queueStatus,
+      autoPublish: true,
+      reviewStatus: "approved",
+      externalPostId: src?.external_post_id ?? undefined,
+      publishedAt: src?.published_at ?? undefined,
+      settings: { fps: 16, framesPerScene: 257, numScenes: scenes.length || 1, samplingSteps: 29 },
+      scenePrompts: scenes,
+      negativePrompt: "low quality, blurry, distorted face, watermark",
+      history: [
+        { at: r.created_at, label: `Scheduled for ${new Date(r.publish_time).toLocaleString()}`, kind: "scheduled" },
+        ...(src?.published_at ? [{ at: src.published_at, label: "Published", kind: "published" as const }] : []),
+      ],
+    };
+  });
+}
 
 // ---------- Helpers ----------
 
@@ -403,7 +301,24 @@ function QueueBadge({ status }: { status: QueueStatus }) {
 // ---------- Page ----------
 
 function SchedulePage() {
-  const [items, setItems] = useState<ScheduledItem[]>(initialItems);
+  const queryClient = useQueryClient();
+  const { data: scheduleData = [] } = useQuery({ queryKey: ["schedules"], queryFn: fetchSchedules, staleTime: 10_000 });
+  const { data: accounts = [] } = useQuery({ queryKey: ["connected-accounts"], queryFn: fetchAccounts, staleTime: 60_000 });
+  const [items, setItems] = useState<ScheduledItem[]>([]);
+  useEffect(() => setItems(scheduleData), [scheduleData]);
+
+  useEffect(() => {
+    const ch = supabase
+      .channel("schedules-rt")
+      .on("postgres_changes", { event: "*", schema: "public", table: "schedules" }, () =>
+        queryClient.invalidateQueries({ queryKey: ["schedules"] }),
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [queryClient]);
+
+  const characters = useMemo(() => Array.from(new Set(items.map((i) => i.character))), [items]);
+
   const [tab, setTab] = useState("calendar");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | PublishStatus>("all");
@@ -492,13 +407,18 @@ function SchedulePage() {
   const updateItem = (id: string, patch: Partial<ScheduledItem>) =>
     setItems((prev) => prev.map((i) => (i.id === id ? { ...i, ...patch } : i)));
 
-  const removeItem = (id: string) => {
+  const removeItem = async (id: string) => {
     setItems((prev) => prev.filter((i) => i.id !== id));
-    toast.success("Schedule removed");
     setSelected(null);
+    try {
+      const { error } = await supabase.from("schedules").delete().eq("id", id);
+      if (error) throw error;
+      toast.success("Schedule removed");
+      queryClient.invalidateQueries({ queryKey: ["schedules"] });
+    } catch (e: any) { toast.error(e?.message ?? "Failed to remove"); }
   };
 
-  const retryPublish = (id: string) => {
+  const retryPublish = async (id: string) => {
     updateItem(id, {
       status: "scheduled",
       queueStatus: "ready",
@@ -507,40 +427,37 @@ function SchedulePage() {
         { at: new Date().toISOString(), label: "Retry queued", kind: "retried" },
       ],
     });
-    toast.success("Queued for retry");
+    try {
+      await scheduleService.update(id, { status: "scheduled" });
+      toast.success("Queued for retry");
+      queryClient.invalidateQueries({ queryKey: ["schedules"] });
+    } catch (e: any) { toast.error(e?.message ?? "Failed to retry"); }
   };
 
-  const publishNow = (id: string) => {
+  const publishNow = async (id: string) => {
     const item = items.find((i) => i.id === id);
     if (!item) return;
     updateItem(id, { status: "publishing", queueStatus: "publishing" });
-    setTimeout(() => {
-      const ok = Math.random() > 0.15;
+    try {
       const now = new Date().toISOString();
-      if (ok) {
-        updateItem(id, {
-          status: "published",
-          queueStatus: "published",
-          publishedAt: now,
-          externalPostId: `fv_mock_${item.type}_${Date.now()}`,
-          history: [
-            ...item.history,
-            { at: now, label: "Published", kind: "published" },
-          ],
-        });
-        toast.success("Published to Fanvue");
-      } else {
-        updateItem(id, {
-          status: "failed",
-          queueStatus: "failed",
-          history: [
-            ...item.history,
-            { at: now, label: "Publish failed", kind: "failed" },
-          ],
-        });
-        toast.error("Publish failed");
+      const externalId = `fv_${item.type}_${Date.now()}`;
+      const table = item.type === "image" ? "images" : "videos";
+      // mark underlying media as published
+      const { data: schedRow } = await supabase.from("schedules").select("content_id").eq("id", id).single();
+      if (schedRow?.content_id) {
+        await supabase
+          .from(table)
+          .update({ publish_status: "published", published_at: now, external_post_id: externalId })
+          .eq("id", schedRow.content_id);
       }
-    }, 1200);
+      await scheduleService.update(id, { status: "published" });
+      toast.success("Published to Fanvue");
+      queryClient.invalidateQueries({ queryKey: ["schedules"] });
+    } catch (e: any) {
+      updateItem(id, { status: "failed", queueStatus: "failed" });
+      try { await scheduleService.update(id, { status: "failed" }); } catch {}
+      toast.error(e?.message ?? "Publish failed");
+    }
   };
 
   const pauseItem = (id: string) => {
@@ -551,27 +468,29 @@ function SchedulePage() {
   // ---------- Drag and drop ----------
   const [dragId, setDragId] = useState<string | null>(null);
 
-  const onDropOnDay = (day: Date) => {
+  const onDropOnDay = async (day: Date) => {
     if (!dragId) return;
     const item = items.find((i) => i.id === dragId);
     if (!item) return;
     const oldD = new Date(item.scheduledAt);
     const newD = new Date(day);
     newD.setHours(oldD.getHours(), oldD.getMinutes(), 0, 0);
+    const iso = newD.toISOString();
     updateItem(dragId, {
-      scheduledAt: newD.toISOString(),
+      scheduledAt: iso,
       history: [
         ...item.history,
-        {
-          at: new Date().toISOString(),
-          label: `Rescheduled to ${fmtDateTime(newD.toISOString())}`,
-          kind: "scheduled",
-        },
+        { at: new Date().toISOString(), label: `Rescheduled to ${fmtDateTime(iso)}`, kind: "scheduled" },
       ],
     });
-    toast.success("Schedule updated");
+    try {
+      await scheduleService.update(dragId, { publish_time: iso });
+      toast.success("Schedule updated");
+      queryClient.invalidateQueries({ queryKey: ["schedules"] });
+    } catch (e: any) { toast.error(e?.message ?? "Failed to update"); }
     setDragId(null);
   };
+
 
   return (
     <SidebarProvider>
@@ -773,14 +692,8 @@ function SchedulePage() {
         onRemove={removeItem}
       />
 
-      <CreateScheduleDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        onCreate={(item) => {
-          setItems((prev) => [item, ...prev]);
-          toast.success("Content scheduled");
-        }}
-      />
+      <CreateScheduleDialog open={createOpen} onOpenChange={setCreateOpen} />
+
     </SidebarProvider>
   );
 }
@@ -1440,25 +1353,59 @@ function Mini({ label, value }: { label: string; value: string | number }) {
 
 // ---------- Create dialog ----------
 
-const approvedAssets: Array<Pick<ScheduledItem, "contentName" | "type" | "character" | "thumbnail">> = [
-  { contentName: "Aria — Studio Promo v4", type: "video", character: "Aria", thumbnail: IMG_A },
-  { contentName: "Nova — Window Light B", type: "image", character: "Nova", thumbnail: IMG_B },
-  { contentName: "Luna — Soft Portraits", type: "image", character: "Luna", thumbnail: IMG_C },
-  { contentName: "Veda — Hallway Set", type: "video", character: "Veda", thumbnail: IMG_D },
-  { contentName: "Mira — Cozy Loop", type: "video", character: "Mira", thumbnail: IMG_E },
-];
+type ApprovedAsset = {
+  id: string;
+  type: "image" | "video";
+  name: string;
+  character: string;
+  thumbnail: string;
+};
+
+async function fetchApprovedAssets(): Promise<ApprovedAsset[]> {
+  const [imgRes, vidRes, charRes] = await Promise.all([
+    supabase.from("images").select("id, image_url, prompt, character_id").eq("status", "approved"),
+    supabase.from("videos").select("id, video_url, prompt, character_id").eq("status", "approved"),
+    supabase.from("characters").select("id, name, reference_image_url"),
+  ]);
+  const charMap = new Map((charRes.data ?? []).map((c: any) => [c.id, c]));
+  const imgs: ApprovedAsset[] = (imgRes.data ?? []).map((i: any) => ({
+    id: i.id,
+    type: "image",
+    name: `${charMap.get(i.character_id)?.name ?? "Lila"} — ${(i.prompt ?? "Image").slice(0, 40)}`,
+    character: charMap.get(i.character_id)?.name ?? "Lila",
+    thumbnail: i.image_url ?? charMap.get(i.character_id)?.reference_image_url ?? "",
+  }));
+  const vids: ApprovedAsset[] = (vidRes.data ?? []).map((v: any) => ({
+    id: v.id,
+    type: "video",
+    name: `${charMap.get(v.character_id)?.name ?? "Lila"} — ${(v.prompt ?? "Video").slice(0, 40)}`,
+    character: charMap.get(v.character_id)?.name ?? "Lila",
+    thumbnail: charMap.get(v.character_id)?.reference_image_url ?? "",
+  }));
+  return [...imgs, ...vids];
+}
 
 function CreateScheduleDialog({
   open,
   onOpenChange,
-  onCreate,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
-  onCreate: (i: ScheduledItem) => void;
 }) {
+  const queryClient = useQueryClient();
+  const { data: assets = [] } = useQuery({
+    queryKey: ["approved-assets"],
+    queryFn: fetchApprovedAssets,
+    enabled: open,
+  });
+  const { data: accounts = [] } = useQuery({
+    queryKey: ["connected-accounts"],
+    queryFn: fetchAccounts,
+    enabled: open,
+  });
+
   const [contentIdx, setContentIdx] = useState("0");
-  const [accountId, setAccountId] = useState(accounts[0].id);
+  const [accountId, setAccountId] = useState("");
   const [date, setDate] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() + 1);
@@ -1468,43 +1415,35 @@ function CreateScheduleDialog({
   const [autoPublish, setAutoPublish] = useState(true);
   const [notes, setNotes] = useState("");
 
-  const reset = () => {
-    setContentIdx("0");
-    setAccountId(accounts[0].id);
-    setNotes("");
-    setAutoPublish(true);
-  };
+  useEffect(() => {
+    if (accounts.length && !accountId) setAccountId(accounts[0].id);
+  }, [accounts, accountId]);
 
-  const submit = () => {
-    const c = approvedAssets[Number(contentIdx)];
+  const submit = async () => {
+    const asset = assets[Number(contentIdx)];
+    if (!asset) { toast.error("Pick an approved asset first"); return; }
+    if (!accountId) { toast.error("Connect a Fanvue account first"); return; }
     const iso = new Date(`${date}T${time}:00`).toISOString();
-    const item: ScheduledItem = {
-      id: `sch_${Date.now()}`,
-      contentName: c.contentName,
-      type: c.type,
-      character: c.character,
-      thumbnail: c.thumbnail,
-      accountId,
-      scheduledAt: iso,
-      status: "scheduled",
-      queueStatus: "waiting",
-      autoPublish,
-      notes: notes || undefined,
-      reviewStatus: "approved",
-      settings: baseSettings,
-      scenePrompts: scenePromptsSample,
-      negativePrompt: negativePromptSample,
-      history: [
-        {
-          at: new Date().toISOString(),
-          label: `Scheduled for ${fmtDateTime(iso)}`,
-          kind: "scheduled",
-        },
-      ],
-    };
-    onCreate(item);
-    reset();
-    onOpenChange(false);
+    try {
+      const { data: userRes } = await supabase.auth.getUser();
+      await scheduleService.create({
+        content_type: asset.type,
+        content_id: asset.id,
+        publish_time: iso,
+        platform: "Fanvue",
+        status: "scheduled",
+        created_by: userRes.user?.id ?? null,
+      } as any);
+      // attach connected account to underlying media row
+      const table = asset.type === "image" ? "images" : "videos";
+      await supabase.from(table).update({ connected_account_id: accountId }).eq("id", asset.id);
+      toast.success("Content scheduled");
+      queryClient.invalidateQueries({ queryKey: ["schedules"] });
+      onOpenChange(false);
+      setNotes("");
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed to schedule");
+    }
   };
 
   return (
@@ -1520,34 +1459,40 @@ function CreateScheduleDialog({
         <div className="space-y-4">
           <div className="space-y-1.5">
             <Label>Content</Label>
-            <Select value={contentIdx} onValueChange={setContentIdx}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {approvedAssets.map((a, idx) => (
-                  <SelectItem key={idx} value={String(idx)}>
-                    {a.contentName}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {assets.length === 0 ? (
+              <p className="rounded-md border border-dashed border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+                No approved content yet. Approve images or videos in the Review Queue first.
+              </p>
+            ) : (
+              <Select value={contentIdx} onValueChange={setContentIdx}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {assets.map((a, idx) => (
+                    <SelectItem key={a.id} value={String(idx)}>{a.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
 
           <div className="space-y-1.5">
             <Label>Publishing account</Label>
-            <Select value={accountId} onValueChange={setAccountId}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {accounts.map((a) => (
-                  <SelectItem key={a.id} value={a.id} disabled={a.status !== "connected"}>
-                    {a.name} {a.status !== "connected" ? "· offline" : ""}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {accounts.length === 0 ? (
+              <p className="rounded-md border border-dashed border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+                No Fanvue account connected yet — add one in Settings.
+              </p>
+            ) : (
+              <Select value={accountId} onValueChange={setAccountId}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {accounts.map((a) => (
+                    <SelectItem key={a.id} value={a.id} disabled={a.status !== "connected"}>
+                      {a.name} {a.status !== "connected" ? "· offline" : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -1588,10 +1533,8 @@ function CreateScheduleDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button onClick={submit} className="gap-2">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={submit} className="gap-2" disabled={!assets.length || !accounts.length}>
             <CalendarPlus className="h-4 w-4" /> Schedule
           </Button>
         </DialogFooter>
@@ -1599,3 +1542,4 @@ function CreateScheduleDialog({
     </Dialog>
   );
 }
+

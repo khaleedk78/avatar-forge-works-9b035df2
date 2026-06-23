@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ClipboardCheck,
   CheckCircle2,
@@ -18,6 +19,8 @@ import {
   Inbox,
 } from "lucide-react";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
+import { reviewService, generationService } from "@/services";
 
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/dashboard/app-sidebar";
@@ -100,152 +103,88 @@ type ReviewItem = {
   history: HistoryEvent[];
 };
 
-// ---------- Mock data ----------
+// ---------- Data loading ----------
 
-const CHARS = ["Lila Rose", "Aria Vale", "Nyx Monroe", "Soraya Kim"];
-
-const SCENE_LIBRARY = [
-  "Golden hour rooftop in Tokyo, soft wind, cinematic 35mm",
-  "Close-up portrait, neon backlight, shallow depth of field",
-  "Walking through a quiet alley, rain reflections on asphalt",
-  "Sitting in a velvet chair, candlelit room, slow camera dolly",
-  "Beach at sunset, light film grain, warm palette",
-  "Studio backdrop, controlled key light, beauty shot",
-  "Late night diner booth, neon sign glow, soft bokeh",
-  "Penthouse balcony, city skyline, gentle hair movement",
-  "Mirror reflection in a luxury bathroom, marble surfaces",
-  "Driving a convertible at dusk, motion blur background",
-];
-
-const sceneSet = (n: number) =>
-  Array.from({ length: n }, (_, i) => SCENE_LIBRARY[i % SCENE_LIBRARY.length]);
-
-const NEG =
+const NEG_DEFAULT =
   "low quality, blurry, extra limbs, distorted face, watermark, text, deformed hands";
 
-const placeholder = (seed: string, w = 800, h = 1000) =>
-  `https://picsum.photos/seed/${encodeURIComponent(seed)}/${w}/${h}`;
+const PLACEHOLDER_IMG = "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=800&q=80";
 
-const now = Date.now();
-const hoursAgo = (h: number) => new Date(now - h * 3600 * 1000).toISOString();
+type DbReviewRow = {
+  id: string;
+  content_type: "image" | "video";
+  content_id: string;
+  status: string;
+  reviewer_id: string | null;
+  reviewed_at: string | null;
+  notes: string | null;
+  created_at: string;
+};
 
-const MOCK_ITEMS: ReviewItem[] = [
-  {
-    id: "rv_001",
-    type: "video",
-    character: "Lila Rose",
-    thumbnail: placeholder("lila-1"),
-    preview: placeholder("lila-1", 1280, 720),
-    referenceImage: placeholder("lila-ref-1", 600, 800),
-    createdAt: hoursAgo(2),
-    status: "pending",
-    jobId: "job_8c4a1f2e",
-    settings: { fps: 16, framesPerScene: 257, numScenes: 10, samplingSteps: 29 },
-    scenes: sceneSet(10),
-    negativePrompt: NEG,
-    history: [
-      { at: hoursAgo(2.4), label: "Generated", kind: "generated" },
-      { at: hoursAgo(2.1), label: "Sent to review", kind: "queued" },
-    ],
-  },
-  {
-    id: "rv_002",
-    type: "image",
-    character: "Aria Vale",
-    thumbnail: placeholder("aria-1"),
-    preview: placeholder("aria-1", 1200, 1500),
-    referenceImage: placeholder("aria-ref-1", 600, 800),
-    createdAt: hoursAgo(5),
-    status: "pending",
-    jobId: "job_2d9b88a1",
-    settings: { fps: 0, framesPerScene: 0, numScenes: 1, samplingSteps: 32 },
-    scenes: [SCENE_LIBRARY[1]],
-    negativePrompt: NEG,
-    history: [
-      { at: hoursAgo(5.2), label: "Generated", kind: "generated" },
-      { at: hoursAgo(5.0), label: "Sent to review", kind: "queued" },
-    ],
-  },
-  {
-    id: "rv_003",
-    type: "video",
-    character: "Nyx Monroe",
-    thumbnail: placeholder("nyx-1"),
-    preview: placeholder("nyx-1", 1280, 720),
-    referenceImage: placeholder("nyx-ref-1", 600, 800),
-    createdAt: hoursAgo(8),
-    status: "pending",
-    jobId: "job_44ffea03",
-    settings: { fps: 16, framesPerScene: 257, numScenes: 8, samplingSteps: 29 },
-    scenes: sceneSet(8),
-    negativePrompt: NEG,
-    notes: "Scene 4 needs adjustment — facial consistency drifts",
-    history: [
-      { at: hoursAgo(8.3), label: "Generated", kind: "generated" },
-      { at: hoursAgo(8.1), label: "Sent to review", kind: "queued" },
-    ],
-  },
-  {
-    id: "rv_004",
-    type: "image",
-    character: "Soraya Kim",
-    thumbnail: placeholder("soraya-1"),
-    preview: placeholder("soraya-1", 1200, 1500),
-    referenceImage: placeholder("soraya-ref-1", 600, 800),
-    createdAt: hoursAgo(24),
-    status: "approved",
-    jobId: "job_a7710c92",
-    settings: { fps: 0, framesPerScene: 0, numScenes: 1, samplingSteps: 32 },
-    scenes: [SCENE_LIBRARY[5]],
-    negativePrompt: NEG,
-    history: [
-      { at: hoursAgo(25), label: "Generated", kind: "generated" },
-      { at: hoursAgo(24.8), label: "Sent to review", kind: "queued" },
-      { at: hoursAgo(23), label: "Approved by Maya", kind: "approved", by: "Maya" },
-    ],
-  },
-  {
-    id: "rv_005",
-    type: "video",
-    character: "Lila Rose",
-    thumbnail: placeholder("lila-2"),
-    preview: placeholder("lila-2", 1280, 720),
-    referenceImage: placeholder("lila-ref-2", 600, 800),
-    createdAt: hoursAgo(30),
-    status: "rejected",
-    jobId: "job_bb1029ee",
-    settings: { fps: 16, framesPerScene: 257, numScenes: 10, samplingSteps: 24 },
-    scenes: sceneSet(10),
-    negativePrompt: NEG,
-    notes: "Lighting too harsh, improve facial highlights",
-    history: [
-      { at: hoursAgo(31), label: "Generated", kind: "generated" },
-      { at: hoursAgo(30.6), label: "Sent to review", kind: "queued" },
-      { at: hoursAgo(29.5), label: "Rejected by Theo", kind: "rejected", by: "Theo" },
-      { at: hoursAgo(29.2), label: "Regeneration requested", kind: "regenerated" },
-    ],
-  },
-  {
-    id: "rv_006",
-    type: "image",
-    character: "Aria Vale",
-    thumbnail: placeholder("aria-2"),
-    preview: placeholder("aria-2", 1200, 1500),
-    referenceImage: placeholder("aria-ref-2", 600, 800),
-    createdAt: hoursAgo(48),
-    status: "scheduled",
-    jobId: "job_5e80c143",
-    settings: { fps: 0, framesPerScene: 0, numScenes: 1, samplingSteps: 32 },
-    scenes: [SCENE_LIBRARY[7]],
-    negativePrompt: NEG,
-    history: [
-      { at: hoursAgo(50), label: "Generated", kind: "generated" },
-      { at: hoursAgo(49.5), label: "Sent to review", kind: "queued" },
-      { at: hoursAgo(48), label: "Approved by Maya", kind: "approved", by: "Maya" },
-      { at: hoursAgo(20), label: "Scheduled for Fanvue", kind: "scheduled" },
-    ],
-  },
-];
+async function fetchQueue(): Promise<ReviewItem[]> {
+  const { data: rows, error } = await supabase
+    .from("review_queue")
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+
+  const imageIds = (rows ?? []).filter((r) => r.content_type === "image").map((r) => r.content_id);
+  const videoIds = (rows ?? []).filter((r) => r.content_type === "video").map((r) => r.content_id);
+
+  const [imgRes, vidRes, charRes] = await Promise.all([
+    imageIds.length
+      ? supabase.from("images").select("id, image_url, prompt, character_id, created_at, status").in("id", imageIds)
+      : Promise.resolve({ data: [], error: null } as const),
+    videoIds.length
+      ? supabase
+          .from("videos")
+          .select("id, video_url, prompt, scene_prompts, character_id, created_at, status")
+          .in("id", videoIds)
+      : Promise.resolve({ data: [], error: null } as const),
+    supabase.from("characters").select("id, name, reference_image_url"),
+  ]);
+
+  const imgMap = new Map((imgRes.data ?? []).map((i: any) => [i.id, i]));
+  const vidMap = new Map((vidRes.data ?? []).map((v: any) => [v.id, v]));
+  const charMap = new Map((charRes.data ?? []).map((c: any) => [c.id, c]));
+
+  return (rows ?? []).map((r: DbReviewRow): ReviewItem => {
+    const isVideo = r.content_type === "video";
+    const src: any = isVideo ? vidMap.get(r.content_id) : imgMap.get(r.content_id);
+    const char: any = src?.character_id ? charMap.get(src.character_id) : null;
+    const scenes: string[] = isVideo && Array.isArray(src?.scene_prompts) ? src.scene_prompts : src?.prompt ? [src.prompt] : [];
+    const media = isVideo ? src?.video_url : src?.image_url;
+    const thumb = isVideo ? char?.reference_image_url || PLACEHOLDER_IMG : media || PLACEHOLDER_IMG;
+    return {
+      id: r.id,
+      type: r.content_type,
+      character: char?.name ?? "Lila",
+      thumbnail: thumb,
+      preview: media || thumb,
+      referenceImage: char?.reference_image_url || PLACEHOLDER_IMG,
+      createdAt: r.created_at,
+      status: r.status as ReviewStatus,
+      jobId: src?.id ?? r.content_id,
+      settings: { fps: 16, framesPerScene: 257, numScenes: scenes.length || 1, samplingSteps: 29 },
+      scenes: scenes.length ? scenes : ["—"],
+      negativePrompt: NEG_DEFAULT,
+      notes: r.notes ?? undefined,
+      history: [
+        { at: src?.created_at ?? r.created_at, label: "Generated", kind: "generated" },
+        { at: r.created_at, label: "Sent to review", kind: "queued" },
+        ...(r.reviewed_at
+          ? [
+              {
+                at: r.reviewed_at,
+                label: r.status === "approved" ? "Approved" : "Rejected",
+                kind: r.status as "approved" | "rejected",
+              } as HistoryEvent,
+            ]
+          : []),
+      ],
+    };
+  });
+}
 
 // ---------- Helpers ----------
 
@@ -290,7 +229,25 @@ function timeAgo(iso: string) {
 // ---------- Page ----------
 
 function ReviewPage() {
-  const [items, setItems] = useState<ReviewItem[]>(MOCK_ITEMS);
+  const queryClient = useQueryClient();
+  const { data: queueItems = [] } = useQuery({
+    queryKey: ["review-queue"],
+    queryFn: fetchQueue,
+    staleTime: 10_000,
+  });
+  const [items, setItems] = useState<ReviewItem[]>([]);
+  useEffect(() => setItems(queueItems), [queueItems]);
+
+  useEffect(() => {
+    const ch = supabase
+      .channel("review-queue-rt")
+      .on("postgres_changes", { event: "*", schema: "public", table: "review_queue" }, () =>
+        queryClient.invalidateQueries({ queryKey: ["review-queue"] }),
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [queryClient]);
+
   const [selected, setSelected] = useState<string[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -300,6 +257,7 @@ function ReviewPage() {
   const [noteDraft, setNoteDraft] = useState("");
 
   const openItem = items.find((i) => i.id === openId) ?? null;
+  const CHARS = Array.from(new Set(items.map((i) => i.character)));
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -338,51 +296,51 @@ function ReviewPage() {
       ),
     );
 
-  const approve = (id: string) => {
-    setStatus(id, "approved", {
-      at: new Date().toISOString(),
-      label: "Approved",
-      kind: "approved",
-    });
-    toast.success("Content approved");
+  const approve = async (id: string) => {
+    setStatus(id, "approved", { at: new Date().toISOString(), label: "Approved", kind: "approved" });
+    try {
+      await reviewService.decide(id, "approved");
+      toast.success("Content approved");
+      queryClient.invalidateQueries({ queryKey: ["review-queue"] });
+    } catch (e: any) { toast.error(e?.message ?? "Failed to approve"); }
   };
-  const reject = (id: string) => {
-    setStatus(id, "rejected", {
-      at: new Date().toISOString(),
-      label: "Rejected",
-      kind: "rejected",
-    });
-    toast.error("Content rejected");
+  const reject = async (id: string) => {
+    setStatus(id, "rejected", { at: new Date().toISOString(), label: "Rejected", kind: "rejected" });
+    try {
+      await reviewService.decide(id, "rejected");
+      toast.error("Content rejected");
+      queryClient.invalidateQueries({ queryKey: ["review-queue"] });
+    } catch (e: any) { toast.error(e?.message ?? "Failed to reject"); }
   };
-  const regenerate = (id: string) => {
+  const regenerate = async (id: string) => {
+    const item = items.find((i) => i.id === id);
+    if (!item) return;
     setItems((arr) =>
       arr.map((i) =>
         i.id === id
-          ? {
-              ...i,
-              status: "pending",
-              history: [
-                ...i.history,
-                {
-                  at: new Date().toISOString(),
-                  label: "Regeneration requested",
-                  kind: "regenerated",
-                },
-              ],
-            }
+          ? { ...i, status: "pending", history: [...i.history, { at: new Date().toISOString(), label: "Regeneration requested", kind: "regenerated" }] }
           : i,
       ),
     );
-    toast("Regeneration queued", {
-      description: "A new job was created with the original settings.",
-    });
+    try {
+      const { data: userRes } = await supabase.auth.getUser();
+      await generationService.enqueue({
+        type: item.type,
+        status: "queued",
+        created_by: userRes.user?.id ?? null,
+        input_payload: { scenes: item.scenes, fps: item.settings.fps, framesPerScene: item.settings.framesPerScene, samplingSteps: item.settings.samplingSteps, regenerationOf: id },
+      } as any);
+      toast("Regeneration queued");
+    } catch (e: any) { toast.error(e?.message ?? "Failed to regenerate"); }
   };
 
-  const saveNote = (id: string) => {
-    setItems((arr) =>
-      arr.map((i) => (i.id === id ? { ...i, notes: noteDraft } : i)),
-    );
-    toast.success("Reviewer note saved");
+  const saveNote = async (id: string) => {
+    setItems((arr) => arr.map((i) => (i.id === id ? { ...i, notes: noteDraft } : i)));
+    try {
+      const { error } = await supabase.from("review_queue").update({ notes: noteDraft }).eq("id", id);
+      if (error) throw error;
+      toast.success("Reviewer note saved");
+    } catch (e: any) { toast.error(e?.message ?? "Failed to save note"); }
   };
 
   const toggleSelect = (id: string) =>

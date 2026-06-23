@@ -267,6 +267,60 @@ export type Database = {
           },
         ]
       }
+      notification_settings: {
+        Row: {
+          created_at: string
+          failed_upload_browser: boolean
+          failed_upload_email: boolean
+          failed_upload_in_app: boolean
+          generation_browser: boolean
+          generation_email: boolean
+          generation_in_app: boolean
+          publishing_browser: boolean
+          publishing_email: boolean
+          publishing_in_app: boolean
+          system_alerts_browser: boolean
+          system_alerts_email: boolean
+          system_alerts_in_app: boolean
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          failed_upload_browser?: boolean
+          failed_upload_email?: boolean
+          failed_upload_in_app?: boolean
+          generation_browser?: boolean
+          generation_email?: boolean
+          generation_in_app?: boolean
+          publishing_browser?: boolean
+          publishing_email?: boolean
+          publishing_in_app?: boolean
+          system_alerts_browser?: boolean
+          system_alerts_email?: boolean
+          system_alerts_in_app?: boolean
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          failed_upload_browser?: boolean
+          failed_upload_email?: boolean
+          failed_upload_in_app?: boolean
+          generation_browser?: boolean
+          generation_email?: boolean
+          generation_in_app?: boolean
+          publishing_browser?: boolean
+          publishing_email?: boolean
+          publishing_in_app?: boolean
+          system_alerts_browser?: boolean
+          system_alerts_email?: boolean
+          system_alerts_in_app?: boolean
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string
@@ -343,6 +397,39 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      publishing_defaults: {
+        Row: {
+          auto_publish: boolean
+          created_at: string
+          default_category: string
+          default_price: number
+          default_visibility: string
+          updated_at: string
+          user_id: string
+          watermark_enabled: boolean
+        }
+        Insert: {
+          auto_publish?: boolean
+          created_at?: string
+          default_category?: string
+          default_price?: number
+          default_visibility?: string
+          updated_at?: string
+          user_id: string
+          watermark_enabled?: boolean
+        }
+        Update: {
+          auto_publish?: boolean
+          created_at?: string
+          default_category?: string
+          default_price?: number
+          default_visibility?: string
+          updated_at?: string
+          user_id?: string
+          watermark_enabled?: boolean
+        }
+        Relationships: []
       }
       review_queue: {
         Row: {
@@ -466,6 +553,33 @@ export type Database = {
         }
         Relationships: []
       }
+      sync_settings: {
+        Row: {
+          auto_sync: boolean
+          created_at: string
+          retry_uploads: boolean
+          sync_interval_minutes: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          auto_sync?: boolean
+          created_at?: string
+          retry_uploads?: boolean
+          sync_interval_minutes?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          auto_sync?: boolean
+          created_at?: string
+          retry_uploads?: boolean
+          sync_interval_minutes?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string
@@ -483,6 +597,57 @@ export type Database = {
           created_at?: string
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_settings_general: {
+        Row: {
+          auto_publish: boolean
+          compact_mode: boolean
+          created_at: string
+          default_fps: number
+          default_scenes: number
+          default_steps: number
+          landing_page: string
+          manual_approval: boolean
+          retain_rejected: boolean
+          retry_failed: boolean
+          store_history: boolean
+          theme: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          auto_publish?: boolean
+          compact_mode?: boolean
+          created_at?: string
+          default_fps?: number
+          default_scenes?: number
+          default_steps?: number
+          landing_page?: string
+          manual_approval?: boolean
+          retain_rejected?: boolean
+          retry_failed?: boolean
+          store_history?: boolean
+          theme?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          auto_publish?: boolean
+          compact_mode?: boolean
+          created_at?: string
+          default_fps?: number
+          default_scenes?: number
+          default_steps?: number
+          landing_page?: string
+          manual_approval?: boolean
+          retain_rejected?: boolean
+          retry_failed?: boolean
+          store_history?: boolean
+          theme?: string
+          updated_at?: string
           user_id?: string
         }
         Relationships: []

@@ -1,5 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import {
+  settingsService,
+  defaultGeneral,
+  defaultPublishing,
+  defaultNotifications,
+  defaultSync,
+  type GeneralSettings,
+  type PublishingDefaultsRow,
+  type NotificationSettingsRow,
+  type SyncSettingsRow,
+} from "@/services/settingsService";
 import {
   Settings as SettingsIcon,
   Palette,
@@ -139,57 +150,95 @@ export const fanvueServicePlaceholder = {
 // ---------------- Component ----------------
 
 function SettingsPage() {
-  // General — Appearance
-  const [theme, setTheme] = useState<"dark" | "light" | "system">("dark");
-  const [compactMode, setCompactMode] = useState(false);
-  const [landingPage, setLandingPage] = useState("/");
-
-  // General — Generation
-  const [defaultFps, setDefaultFps] = useState(16);
-  const [defaultScenes, setDefaultScenes] = useState(10);
-  const [defaultSteps, setDefaultSteps] = useState(29);
-
-  // General — Publishing
-  const [manualApproval, setManualApproval] = useState(true);
-  const [autoPublish, setAutoPublish] = useState(false);
-  const [retryFailed, setRetryFailed] = useState(true);
-
-  // General — Storage
-  const [storeHistory, setStoreHistory] = useState(true);
-  const [retainRejected, setRetainRejected] = useState(false);
-
-  // Fanvue Integration
-  const [accounts] = useState<ConnectedAccount[]>([]);
+  const [general, setGeneral] = useState<GeneralSettings>(defaultGeneral);
   const [publishingDefaults, setPublishingDefaults] =
-    useState<PublishingDefaults>({
-      defaultVisibility: "subscribers",
-      defaultCategory: "lifestyle",
-      defaultPrice: 0,
-      watermarkEnabled: true,
-      autoPublish: false,
-    });
-  const [autoSync, setAutoSync] = useState(true);
-  const [syncInterval, setSyncInterval] = useState("15");
-  const [retryUploads, setRetryUploads] = useState(true);
+    useState<PublishingDefaultsRow>(defaultPublishing);
+  const [notifications, setNotifications] =
+    useState<NotificationSettingsRow>(defaultNotifications);
+  const [sync, setSync] = useState<SyncSettingsRow>(defaultSync);
+  const [savingGeneral, setSavingGeneral] = useState(false);
+  const [savingNotif, setSavingNotif] = useState(false);
+
+  const [accounts] = useState<ConnectedAccount[]>([]);
   const [syncActivity] = useState<SyncActivity[]>([]);
 
-  // Notifications
-  const [notifications, setNotifications] = useState<NotificationSettings>({
-    generation: { email: false, browser: true, inApp: true },
-    publishing: { email: true, browser: true, inApp: true },
-    failedUpload: { email: true, browser: true, inApp: true },
-    systemAlerts: { email: true, browser: false, inApp: true },
-  });
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [g, p, n, s] = await Promise.all([
+          settingsService.getGeneral(),
+          settingsService.getPublishing(),
+          settingsService.getNotifications(),
+          settingsService.getSync(),
+        ]);
+        if (cancelled) return;
+        setGeneral(g);
+        setPublishingDefaults(p);
+        setNotifications(n);
+        setSync(s);
+      } catch (err) {
+        console.error("Failed to load settings", err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const setG = <K extends keyof GeneralSettings>(k: K, v: GeneralSettings[K]) =>
+    setGeneral((p) => ({ ...p, [k]: v }));
+
+  const channelField = (
+    key: "generation" | "publishing" | "failedUpload" | "systemAlerts",
+    channel: "email" | "browser" | "inApp",
+  ): keyof NotificationSettingsRow => {
+    const keyMap = {
+      generation: "generation",
+      publishing: "publishing",
+      failedUpload: "failed_upload",
+      systemAlerts: "system_alerts",
+    } as const;
+    const chMap = { email: "email", browser: "browser", inApp: "in_app" } as const;
+    return `${keyMap[key]}_${chMap[channel]}` as keyof NotificationSettingsRow;
+  };
 
   const updateChannel = (
-    key: keyof NotificationSettings,
-    channel: keyof NotificationChannel,
+    key: "generation" | "publishing" | "failedUpload" | "systemAlerts",
+    channel: "email" | "browser" | "inApp",
     value: boolean,
-  ) =>
-    setNotifications((prev) => ({
-      ...prev,
-      [key]: { ...prev[key], [channel]: value },
-    }));
+  ) => {
+    const f = channelField(key, channel);
+    setNotifications((p) => ({ ...p, [f]: value }));
+  };
+
+  const handleSaveGeneral = async () => {
+    setSavingGeneral(true);
+    try {
+      await Promise.all([
+        settingsService.saveGeneral(general),
+        settingsService.savePublishing(publishingDefaults),
+        settingsService.saveSync(sync),
+      ]);
+      toast.success("General settings saved");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setSavingGeneral(false);
+    }
+  };
+
+  const handleSaveNotifications = async () => {
+    setSavingNotif(true);
+    try {
+      await settingsService.saveNotifications(notifications);
+      toast.success("Notification preferences saved");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setSavingNotif(false);
+    }
+  };
 
   return (
     <SidebarProvider>
@@ -240,8 +289,8 @@ function SettingsPage() {
                   <div className="space-y-2">
                     <Label>Theme</Label>
                     <Select
-                      value={theme}
-                      onValueChange={(v) => setTheme(v as typeof theme)}
+                      value={general.theme}
+                      onValueChange={(v) => setG("theme", v as GeneralSettings["theme"])}
                     >
                       <SelectTrigger>
                         <SelectValue />
@@ -255,7 +304,10 @@ function SettingsPage() {
                   </div>
                   <div className="space-y-2">
                     <Label>Default landing page</Label>
-                    <Select value={landingPage} onValueChange={setLandingPage}>
+                    <Select
+                      value={general.landing_page}
+                      onValueChange={(v) => setG("landing_page", v)}
+                    >
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
@@ -273,8 +325,8 @@ function SettingsPage() {
                   <ToggleRow
                     label="Compact mode"
                     description="Denser tables and cards."
-                    checked={compactMode}
-                    onChange={setCompactMode}
+                    checked={general.compact_mode}
+                    onChange={(v) => setG("compact_mode", v)}
                   />
                 </div>
               </SectionCard>
@@ -287,18 +339,18 @@ function SettingsPage() {
                 <div className="grid gap-6 md:grid-cols-3">
                   <NumberField
                     label="Default FPS"
-                    value={defaultFps}
-                    onChange={setDefaultFps}
+                    value={general.default_fps}
+                    onChange={(v) => setG("default_fps", v)}
                   />
                   <NumberField
                     label="Default scene count"
-                    value={defaultScenes}
-                    onChange={setDefaultScenes}
+                    value={general.default_scenes}
+                    onChange={(v) => setG("default_scenes", v)}
                   />
                   <NumberField
                     label="Default sampling steps"
-                    value={defaultSteps}
-                    onChange={setDefaultSteps}
+                    value={general.default_steps}
+                    onChange={(v) => setG("default_steps", v)}
                   />
                 </div>
               </SectionCard>
@@ -312,20 +364,20 @@ function SettingsPage() {
                   <ToggleRow
                     label="Manual approval required"
                     description="Block auto-publish until a human approves."
-                    checked={manualApproval}
-                    onChange={setManualApproval}
+                    checked={general.manual_approval}
+                    onChange={(v) => setG("manual_approval", v)}
                   />
                   <ToggleRow
                     label="Auto publish enabled"
                     description="Publish scheduled items automatically."
-                    checked={autoPublish}
-                    onChange={setAutoPublish}
+                    checked={general.auto_publish}
+                    onChange={(v) => setG("auto_publish", v)}
                   />
                   <ToggleRow
                     label="Retry failed publishing"
                     description="Re-attempt failed publications."
-                    checked={retryFailed}
-                    onChange={setRetryFailed}
+                    checked={general.retry_failed}
+                    onChange={(v) => setG("retry_failed", v)}
                   />
                 </div>
               </SectionCard>
@@ -339,24 +391,25 @@ function SettingsPage() {
                   <ToggleRow
                     label="Store generation history"
                     description="Persist all generation jobs and metadata."
-                    checked={storeHistory}
-                    onChange={setStoreHistory}
+                    checked={general.store_history}
+                    onChange={(v) => setG("store_history", v)}
                   />
                   <ToggleRow
                     label="Retain rejected content"
                     description="Keep rejected items for audit and re-review."
-                    checked={retainRejected}
-                    onChange={setRetainRejected}
+                    checked={general.retain_rejected}
+                    onChange={(v) => setG("retain_rejected", v)}
                   />
                 </div>
               </SectionCard>
 
               <div className="flex justify-end">
-                <Button onClick={() => toast.success("General settings saved")}>
-                  Save changes
+                <Button onClick={handleSaveGeneral} disabled={savingGeneral}>
+                  {savingGeneral ? "Saving…" : "Save changes"}
                 </Button>
               </div>
             </TabsContent>
+
 
             {/* ---------- FANVUE ---------- */}
             <TabsContent value="fanvue" className="space-y-6">
@@ -401,12 +454,12 @@ function SettingsPage() {
                   <div className="space-y-2">
                     <Label>Default visibility</Label>
                     <Select
-                      value={publishingDefaults.defaultVisibility}
+                      value={publishingDefaults.default_visibility}
                       onValueChange={(v) =>
                         setPublishingDefaults((p) => ({
                           ...p,
-                          defaultVisibility:
-                            v as PublishingDefaults["defaultVisibility"],
+                          default_visibility:
+                            v as PublishingDefaultsRow["default_visibility"],
                         }))
                       }
                     >
@@ -423,11 +476,11 @@ function SettingsPage() {
                   <div className="space-y-2">
                     <Label>Default category</Label>
                     <Input
-                      value={publishingDefaults.defaultCategory}
+                      value={publishingDefaults.default_category}
                       onChange={(e) =>
                         setPublishingDefaults((p) => ({
                           ...p,
-                          defaultCategory: e.target.value,
+                          default_category: e.target.value,
                         }))
                       }
                     />
@@ -437,11 +490,11 @@ function SettingsPage() {
                     <Input
                       type="number"
                       min={0}
-                      value={publishingDefaults.defaultPrice}
+                      value={publishingDefaults.default_price}
                       onChange={(e) =>
                         setPublishingDefaults((p) => ({
                           ...p,
-                          defaultPrice: Number(e.target.value) || 0,
+                          default_price: Number(e.target.value) || 0,
                         }))
                       }
                     />
@@ -449,20 +502,20 @@ function SettingsPage() {
                   <ToggleRow
                     label="Watermark enabled"
                     description="Apply Lila Studio watermark to outgoing posts."
-                    checked={publishingDefaults.watermarkEnabled}
+                    checked={publishingDefaults.watermark_enabled}
                     onChange={(v) =>
                       setPublishingDefaults((p) => ({
                         ...p,
-                        watermarkEnabled: v,
+                        watermark_enabled: v,
                       }))
                     }
                   />
                   <ToggleRow
                     label="Auto publish"
                     description="Push scheduled posts without confirmation."
-                    checked={publishingDefaults.autoPublish}
+                    checked={publishingDefaults.auto_publish}
                     onChange={(v) =>
-                      setPublishingDefaults((p) => ({ ...p, autoPublish: v }))
+                      setPublishingDefaults((p) => ({ ...p, auto_publish: v }))
                     }
                   />
                 </div>
@@ -476,12 +529,17 @@ function SettingsPage() {
                 <div className="grid gap-6 md:grid-cols-3">
                   <ToggleRow
                     label="Auto sync enabled"
-                    checked={autoSync}
-                    onChange={setAutoSync}
+                    checked={sync.auto_sync}
+                    onChange={(v) => setSync((p) => ({ ...p, auto_sync: v }))}
                   />
                   <div className="space-y-2">
                     <Label>Sync interval (minutes)</Label>
-                    <Select value={syncInterval} onValueChange={setSyncInterval}>
+                    <Select
+                      value={String(sync.sync_interval_minutes)}
+                      onValueChange={(v) =>
+                        setSync((p) => ({ ...p, sync_interval_minutes: Number(v) }))
+                      }
+                    >
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
@@ -495,10 +553,11 @@ function SettingsPage() {
                   </div>
                   <ToggleRow
                     label="Retry failed uploads"
-                    checked={retryUploads}
-                    onChange={setRetryUploads}
+                    checked={sync.retry_uploads}
+                    onChange={(v) => setSync((p) => ({ ...p, retry_uploads: v }))}
                   />
                 </div>
+
 
                 <Separator className="my-6" />
 
@@ -568,7 +627,7 @@ function SettingsPage() {
                             <td key={ch} className="px-4 py-3 text-center">
                               <div className="flex justify-center">
                                 <Switch
-                                  checked={notifications[key][ch]}
+                                  checked={notifications[channelField(key, ch)]}
                                   onCheckedChange={(v) =>
                                     updateChannel(key, ch, v)
                                   }
@@ -584,13 +643,12 @@ function SettingsPage() {
               </SectionCard>
 
               <div className="flex justify-end">
-                <Button
-                  onClick={() => toast.success("Notification preferences saved")}
-                >
-                  Save changes
+                <Button onClick={handleSaveNotifications} disabled={savingNotif}>
+                  {savingNotif ? "Saving…" : "Save changes"}
                 </Button>
               </div>
             </TabsContent>
+
 
             {/* ---------- SYSTEM ---------- */}
             <TabsContent value="system" className="space-y-6">

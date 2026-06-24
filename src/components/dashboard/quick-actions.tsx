@@ -1,4 +1,5 @@
 import { Sparkles, Video, CalendarPlus, ClipboardCheck } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
 
 const actions = [
@@ -7,24 +8,28 @@ const actions = [
     desc: "New portrait or scene",
     icon: Sparkles,
     tone: "from-primary/20 to-primary/0 text-primary",
+    to: "/generate",
   },
   {
     title: "Generate video",
     desc: "Send job to RunPod",
     icon: Video,
     tone: "from-chart-2/20 to-chart-2/0 text-chart-2",
+    to: "/generate",
   },
   {
     title: "Schedule post",
     desc: "Add to publishing queue",
     icon: CalendarPlus,
     tone: "from-chart-4/20 to-chart-4/0 text-chart-4",
+    to: "/schedule",
   },
   {
     title: "Review queue",
     desc: "12 items pending",
     icon: ClipboardCheck,
     tone: "from-success/20 to-success/0 text-success",
+    to: "/review",
   },
 ];
 
@@ -39,8 +44,9 @@ export function QuickActions() {
       </div>
       <div className="grid grid-cols-2 gap-3">
         {actions.map((a) => (
-          <button
+          <Link
             key={a.title}
+            to={a.to}
             className="group relative overflow-hidden rounded-lg border border-border bg-background/40 p-4 text-left transition-all hover:border-primary/40 hover:bg-background"
           >
             <div
@@ -54,7 +60,7 @@ export function QuickActions() {
             </div>
             <p className="relative mt-3 text-sm font-medium text-foreground">{a.title}</p>
             <p className="relative text-xs text-muted-foreground">{a.desc}</p>
-          </button>
+          </Link>
         ))}
       </div>
     </div>

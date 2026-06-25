@@ -1,6 +1,7 @@
-// Pinned to the external Supabase project for Lila Studio.
-// Do NOT replace these with env vars — Lovable Cloud regenerates .env
-// to point at the Cloud project, which breaks auth.
+// Pinned to the external Supabase project for Lila Studio (ref ixkzdnowlbjeiwqzfctu).
+// This is the single source of truth for auth, storage, edge functions, and the
+// database. Values are hardcoded (and mirrored in .env / supabase/config.toml) so
+// an accidental .env regeneration can't silently repoint the app and break auth.
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 

@@ -3,6 +3,7 @@ export { characterService } from "./characterService";
 export { contentService } from "./contentService";
 export { fanvueService } from "./fanvueService";
 export { generationService } from "./generationService";
+export { runpodService } from "./runpodService";
 export { reviewService } from "./reviewService";
 export { scheduleService } from "./scheduleService";
 export { connectedAccountService } from "./connectedAccountService";
